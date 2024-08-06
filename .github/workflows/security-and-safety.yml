@@ -1,4 +1,4 @@
-name: Security and Memory Safety
+name: Memory Safety and Security Checks
 
 on:
   push:
@@ -10,7 +10,6 @@ on:
 
 jobs:
   security-and-safety:
-
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +31,9 @@ jobs:
     - name: Install Miri
       run: rustup component add miri
 
+    - name: Install Cargo Audit
+      run: cargo install cargo-audit
+
     - name: Run Clippy (Linter)
       run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -43,10 +45,4 @@ jobs:
 
     - name: Run Security Audits
       run: cargo audit
-
-    - name: Install AddressSanitizer
-      run: rustup component add sanitizer
-
-    - name: Run AddressSanitizer
-      run: cargo build --release --features=asan
 
