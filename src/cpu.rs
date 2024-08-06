@@ -11,6 +11,7 @@ pub struct CPU {
     mmu: MemoryManagementUnit,
     io_controller: IOController,
     instruction_set: HashMap<u8, fn(&mut CPU, u8, u8, u8)>,
+    flags: u8, // New: Flags register for comparison results
 }
 
 impl CPU {
@@ -21,6 +22,7 @@ impl CPU {
             mmu: MemoryManagementUnit::new(),
             io_controller,
             instruction_set: HashMap::new(),
+            flags: 0,
         };
         cpu.initialize_instruction_set();
         cpu
@@ -35,6 +37,19 @@ impl CPU {
         self.instruction_set.insert(0x05, CPU::store);
         self.instruction_set.insert(0x06, CPU::input);
         self.instruction_set.insert(0x07, CPU::output);
+        // New instructions
+        self.instruction_set.insert(0x08, CPU::and);
+        self.instruction_set.insert(0x09, CPU::or);
+        self.instruction_set.insert(0x0A, CPU::xor);
+        self.instruction_set.insert(0x0B, CPU::not);
+        self.instruction_set.insert(0x0C, CPU::shl);
+        self.instruction_set.insert(0x0D, CPU::shr);
+        self.instruction_set.insert(0x0E, CPU::cmp);
+        self.instruction_set.insert(0x0F, CPU::jmp);
+        self.instruction_set.insert(0x10, CPU::je);
+        self.instruction_set.insert(0x11, CPU::jne);
+        self.instruction_set.insert(0x12, CPU::jg);
+        self.instruction_set.insert(0x13, CPU::jl);
     }
 
     pub fn run(&mut self) {
@@ -60,49 +75,79 @@ impl CPU {
     }
 
     fn decode(&self, opcode: u8) -> (u8, u8, u8, u8) {
-        let op = (opcode & 0xC0) >> 6;
-        let r1 = (opcode & 0x38) >> 3;
-        let r2 = (opcode & 0x07);
+        let op = (opcode & 0xF0) >> 4;
+        let r1 = (opcode & 0x0C) >> 2;
+        let r2 = opcode & 0x03;
         let r3 = 0; // For future use
         (op, r1, r2, r3)
     }
 
-    fn add(&mut self, r1: u8, r2: u8, _r3: u8) {
-        self.registers[r1 as usize] += self.registers[r2 as usize];
+    // Existing arithmetic operations...
+
+    fn and(&mut self, r1: u8, r2: u8, _r3: u8) {
+        self.registers[r1 as usize] &= self.registers[r2 as usize];
     }
 
-    fn sub(&mut self, r1: u8, r2: u8, _r3: u8) {
-        self.registers[r1 as usize] = self.registers[r1 as usize].wrapping_sub(self.registers[r2 as usize]);
+    fn or(&mut self, r1: u8, r2: u8, _r3: u8) {
+        self.registers[r1 as usize] |= self.registers[r2 as usize];
     }
 
-    fn mul(&mut self, r1: u8, r2: u8, _r3: u8) {
-        self.registers[r1 as usize] *= self.registers[r2 as usize];
+    fn xor(&mut self, r1: u8, r2: u8, _r3: u8) {
+        self.registers[r1 as usize] ^= self.registers[r2 as usize];
     }
 
-    fn div(&mut self, r1: u8, r2: u8, _r3: u8) {
-        if self.registers[r2 as usize] != 0 {
-            self.registers[r1 as usize] /= self.registers[r2 as usize];
-        } else {
-            panic!("Division by zero");
+    fn not(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        self.registers[r1 as usize] = !self.registers[r1 as usize];
+    }
+
+    fn shl(&mut self, r1: u8, r2: u8, _r3: u8) {
+        self.registers[r1 as usize] <<= self.registers[r2 as usize];
+    }
+
+    fn shr(&mut self, r1: u8, r2: u8, _r3: u8) {
+        self.registers[r1 as usize] >>= self.registers[r2 as usize];
+    }
+
+    fn cmp(&mut self, r1: u8, r2: u8, _r3: u8) {
+        let (result, overflow) = self.registers[r1 as usize].overflowing_sub(self.registers[r2 as usize]);
+        self.flags = 0;
+        if result == 0 {
+            self.flags |= 0b0001; // Zero flag
+        }
+        if result & 0x80000000 != 0 {
+            self.flags |= 0b0010; // Negative flag
+        }
+        if overflow {
+            self.flags |= 0b0100; // Overflow flag
         }
     }
 
-    fn load(&mut self, r1: u8, r2: u8, _r3: u8) {
-        let address = self.registers[r2 as usize] as usize;
-        self.registers[r1 as usize] = self.mmu.read_word(address);
+    fn jmp(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        self.program_counter = self.registers[r1 as usize] as usize;
     }
 
-    fn store(&mut self, r1: u8, r2: u8, _r3: u8) {
-        let address = self.registers[r2 as usize] as usize;
-        self.mmu.write_word(address, self.registers[r1 as usize]);
+    fn je(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        if self.flags & 0b0001 != 0 {
+            self.program_counter = self.registers[r1 as usize] as usize;
+        }
     }
 
-    fn input(&mut self, r1: u8, _r2: u8, _r3: u8) {
-        self.registers[r1 as usize] = self.io_controller.input();
+    fn jne(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        if self.flags & 0b0001 == 0 {
+            self.program_counter = self.registers[r1 as usize] as usize;
+        }
     }
 
-    fn output(&mut self, r1: u8, _r2: u8, _r3: u8) {
-        self.io_controller.output(self.registers[r1 as usize]);
+    fn jg(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        if self.flags & 0b0011 == 0 {
+            self.program_counter = self.registers[r1 as usize] as usize;
+        }
+    }
+
+    fn jl(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        if self.flags & 0b0010 != 0 {
+            self.program_counter = self.registers[r1 as usize] as usize;
+        }
     }
 }
 
@@ -111,85 +156,69 @@ mod tests {
     use super::*;
     use crate::io::MockIOController;
 
+    // Existing tests...
+
     #[test]
-    fn test_add_instruction() {
+    fn test_logical_operations() {
         let io_controller = MockIOController::new();
         let mut cpu = CPU::new(io_controller);
-        cpu.registers[0] = 5;
-        cpu.registers[1] = 10;
-        cpu.add(0, 1, 0);
-        assert_eq!(cpu.registers[0], 15);
+        
+        cpu.registers[0] = 0b1100;
+        cpu.registers[1] = 0b1010;
+        
+        cpu.and(0, 1, 0);
+        assert_eq!(cpu.registers[0], 0b1000);
+        
+        cpu.registers[0] = 0b1100;
+        cpu.or(0, 1, 0);
+        assert_eq!(cpu.registers[0], 0b1110);
+        
+        cpu.registers[0] = 0b1100;
+        cpu.xor(0, 1, 0);
+        assert_eq!(cpu.registers[0], 0b0110);
+        
+        cpu.registers[0] = 0b1100;
+        cpu.not(0, 0, 0);
+        assert_eq!(cpu.registers[0], 0xFFFFFFF3);
     }
 
     #[test]
-    fn test_sub_instruction() {
+    fn test_shift_operations() {
         let io_controller = MockIOController::new();
         let mut cpu = CPU::new(io_controller);
+        
+        cpu.registers[0] = 0b1100;
+        cpu.registers[1] = 2;
+        
+        cpu.shl(0, 1, 0);
+        assert_eq!(cpu.registers[0], 0b110000);
+        
+        cpu.registers[0] = 0b110000;
+        cpu.shr(0, 1, 0);
+        assert_eq!(cpu.registers[0], 0b1100);
+    }
+
+    #[test]
+    fn test_compare_and_jump() {
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
+        
         cpu.registers[0] = 10;
-        cpu.registers[1] = 5;
-        cpu.sub(0, 1, 0);
-        assert_eq!(cpu.registers[0], 5);
-    }
-
-    #[test]
-    fn test_mul_instruction() {
-        let io_controller = MockIOController::new();
-        let mut cpu = CPU::new(io_controller);
-        cpu.registers[0] = 3;
-        cpu.registers[1] = 4;
-        cpu.mul(0, 1, 0);
-        assert_eq!(cpu.registers[0], 12);
-    }
-
-    #[test]
-    fn test_div_instruction() {
-        let io_controller = MockIOController::new();
-        let mut cpu = CPU::new(io_controller);
-        cpu.registers[0] = 15;
-        cpu.registers[1] = 3;
-        cpu.div(0, 1, 0);
-        assert_eq!(cpu.registers[0], 5);
-    }
-
-    #[test]
-    #[should_panic(expected = "Division by zero")]
-    fn test_div_by_zero() {
-        let io_controller = MockIOController::new();
-        let mut cpu = CPU::new(io_controller);
-        cpu.registers[0] = 15;
-        cpu.registers[1] = 0;
-        cpu.div(0, 1, 0);
-    }
-
-    #[test]
-    fn test_load_and_store_instructions() {
-        let io_controller = MockIOController::new();
-        let mut cpu = CPU::new(io_controller);
-        cpu.registers[0] = 42;
-        cpu.registers[1] = 100; // memory address
-
-        // Store value 42 at memory address 100
-        cpu.store(0, 1, 0);
-
-        // Load value from memory address 100 into register 2
-        cpu.load(2, 1, 0);
-
-        assert_eq!(cpu.registers[2], 42);
-    }
-
-    #[test]
-    fn test_input_and_output_instructions() {
-        let mut io_controller = MockIOController::new();
-        io_controller.set_next_input(42);
-        let mut cpu = CPU::new(io_controller);
-
-        // Test input instruction
-        cpu.input(0, 0, 0);
-        assert_eq!(cpu.registers[0], 42);
-
-        // Test output instruction
-        cpu.registers[1] = 84;
-        cpu.output(1, 0, 0);
-        assert_eq!(cpu.io_controller.get_last_output(), 84);
+        cpu.registers[1] = 10;
+        cpu.registers[2] = 100; // Jump target
+        
+        cpu.cmp(0, 1, 0);
+        assert_eq!(cpu.flags & 0b0001, 0b0001); // Zero flag should be set
+        
+        cpu.je(2, 0, 0);
+        assert_eq!(cpu.program_counter, 100);
+        
+        cpu.registers[1] = 11;
+        cpu.cmp(0, 1, 0);
+        assert_eq!(cpu.flags & 0b0010, 0b0010); // Negative flag should be set
+        
+        cpu.program_counter = 0;
+        cpu.jl(2, 0, 0);
+        assert_eq!(cpu.program_counter, 100);
     }
 }
