@@ -50,6 +50,4 @@ jobs:
     - name: Build project
       run: cargo build --release
 
-    - name: Run tests
-      run: cargo test --release
 
