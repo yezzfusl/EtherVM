@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Configuration for dependency updates in Cargo.toml
+  - package-ecosystem: "cargo"
+    directory: "/" # Location of your Cargo.toml
+    schedule:
+      interval: "daily" # Check for updates daily
+  # Configuration for updates on other package ecosystems, if needed
+  # - package-ecosystem: "npm"
+  #   directory: "/frontend"
+  #   schedule:
+  #     interval: "weekly"
+
