@@ -3,20 +3,23 @@
 use std::collections::HashMap;
 mod memory;
 use memory::MemoryManagementUnit;
+use crate::io::IOController;
 
 pub struct CPU {
     registers: [u32; 8],
     program_counter: usize,
     mmu: MemoryManagementUnit,
+    io_controller: IOController,
     instruction_set: HashMap<u8, fn(&mut CPU, u8, u8, u8)>,
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(io_controller: IOController) -> Self {
         let mut cpu = CPU {
             registers: [0; 8],
             program_counter: 0,
             mmu: MemoryManagementUnit::new(),
+            io_controller,
             instruction_set: HashMap::new(),
         };
         cpu.initialize_instruction_set();
@@ -30,6 +33,8 @@ impl CPU {
         self.instruction_set.insert(0x03, CPU::div);
         self.instruction_set.insert(0x04, CPU::load);
         self.instruction_set.insert(0x05, CPU::store);
+        self.instruction_set.insert(0x06, CPU::input);
+        self.instruction_set.insert(0x07, CPU::output);
     }
 
     pub fn run(&mut self) {
@@ -91,15 +96,25 @@ impl CPU {
         let address = self.registers[r2 as usize] as usize;
         self.mmu.write_word(address, self.registers[r1 as usize]);
     }
+
+    fn input(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        self.registers[r1 as usize] = self.io_controller.input();
+    }
+
+    fn output(&mut self, r1: u8, _r2: u8, _r3: u8) {
+        self.io_controller.output(self.registers[r1 as usize]);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::io::MockIOController;
 
     #[test]
     fn test_add_instruction() {
-        let mut cpu = CPU::new();
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
         cpu.registers[0] = 5;
         cpu.registers[1] = 10;
         cpu.add(0, 1, 0);
@@ -108,7 +123,8 @@ mod tests {
 
     #[test]
     fn test_sub_instruction() {
-        let mut cpu = CPU::new();
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
         cpu.registers[0] = 10;
         cpu.registers[1] = 5;
         cpu.sub(0, 1, 0);
@@ -117,7 +133,8 @@ mod tests {
 
     #[test]
     fn test_mul_instruction() {
-        let mut cpu = CPU::new();
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
         cpu.registers[0] = 3;
         cpu.registers[1] = 4;
         cpu.mul(0, 1, 0);
@@ -126,7 +143,8 @@ mod tests {
 
     #[test]
     fn test_div_instruction() {
-        let mut cpu = CPU::new();
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
         cpu.registers[0] = 15;
         cpu.registers[1] = 3;
         cpu.div(0, 1, 0);
@@ -136,7 +154,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Division by zero")]
     fn test_div_by_zero() {
-        let mut cpu = CPU::new();
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
         cpu.registers[0] = 15;
         cpu.registers[1] = 0;
         cpu.div(0, 1, 0);
@@ -144,7 +163,8 @@ mod tests {
 
     #[test]
     fn test_load_and_store_instructions() {
-        let mut cpu = CPU::new();
+        let io_controller = MockIOController::new();
+        let mut cpu = CPU::new(io_controller);
         cpu.registers[0] = 42;
         cpu.registers[1] = 100; // memory address
 
@@ -155,5 +175,21 @@ mod tests {
         cpu.load(2, 1, 0);
 
         assert_eq!(cpu.registers[2], 42);
+    }
+
+    #[test]
+    fn test_input_and_output_instructions() {
+        let mut io_controller = MockIOController::new();
+        io_controller.set_next_input(42);
+        let mut cpu = CPU::new(io_controller);
+
+        // Test input instruction
+        cpu.input(0, 0, 0);
+        assert_eq!(cpu.registers[0], 42);
+
+        // Test output instruction
+        cpu.registers[1] = 84;
+        cpu.output(1, 0, 0);
+        assert_eq!(cpu.io_controller.get_last_output(), 84);
     }
 }
