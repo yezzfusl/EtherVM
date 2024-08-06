@@ -1,8 +1,12 @@
 mod cpu;
+mod io;
+
+use cpu::CPU;
+use io::IOController;
 
 fn main() {
     println!("Virtual Machine Initializing...");
-    let mut cpu = cpu::CPU::new();
+    let io_controller = IOController::new();
+    let mut cpu = CPU::new(io_controller);
     cpu.run();
 }
-
