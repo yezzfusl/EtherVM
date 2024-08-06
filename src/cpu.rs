@@ -1,9 +1,13 @@
+// src/cpu.rs
+
 use std::collections::HashMap;
+mod memory;
+use memory::MemoryManagementUnit;
 
 pub struct CPU {
     registers: [u32; 8],
     program_counter: usize,
-    memory: [u8; 4096],
+    mmu: MemoryManagementUnit,
     instruction_set: HashMap<u8, fn(&mut CPU, u8, u8, u8)>,
 }
 
@@ -12,7 +16,7 @@ impl CPU {
         let mut cpu = CPU {
             registers: [0; 8],
             program_counter: 0,
-            memory: [0; 4096],
+            mmu: MemoryManagementUnit::new(),
             instruction_set: HashMap::new(),
         };
         cpu.initialize_instruction_set();
@@ -24,6 +28,8 @@ impl CPU {
         self.instruction_set.insert(0x01, CPU::sub);
         self.instruction_set.insert(0x02, CPU::mul);
         self.instruction_set.insert(0x03, CPU::div);
+        self.instruction_set.insert(0x04, CPU::load);
+        self.instruction_set.insert(0x05, CPU::store);
     }
 
     pub fn run(&mut self) {
@@ -34,7 +40,7 @@ impl CPU {
     }
 
     fn fetch(&mut self) -> u8 {
-        let instruction = self.memory[self.program_counter];
+        let instruction = self.mmu.read_byte(self.program_counter);
         self.program_counter += 1;
         instruction
     }
@@ -74,6 +80,16 @@ impl CPU {
         } else {
             panic!("Division by zero");
         }
+    }
+
+    fn load(&mut self, r1: u8, r2: u8, _r3: u8) {
+        let address = self.registers[r2 as usize] as usize;
+        self.registers[r1 as usize] = self.mmu.read_word(address);
+    }
+
+    fn store(&mut self, r1: u8, r2: u8, _r3: u8) {
+        let address = self.registers[r2 as usize] as usize;
+        self.mmu.write_word(address, self.registers[r1 as usize]);
     }
 }
 
@@ -125,5 +141,19 @@ mod tests {
         cpu.registers[1] = 0;
         cpu.div(0, 1, 0);
     }
-}
 
+    #[test]
+    fn test_load_and_store_instructions() {
+        let mut cpu = CPU::new();
+        cpu.registers[0] = 42;
+        cpu.registers[1] = 100; // memory address
+
+        // Store value 42 at memory address 100
+        cpu.store(0, 1, 0);
+
+        // Load value from memory address 100 into register 2
+        cpu.load(2, 1, 0);
+
+        assert_eq!(cpu.registers[2], 42);
+    }
+}
