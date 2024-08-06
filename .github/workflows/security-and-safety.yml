@@ -1,0 +1,52 @@
+name: Security and Memory Safety
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  security-and-safety:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Install Clippy
+      run: rustup component add clippy
+
+    - name: Install Rustfmt
+      run: rustup component add rustfmt
+
+    - name: Install Miri
+      run: rustup component add miri
+
+    - name: Run Clippy (Linter)
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Run Rustfmt (Code Formatting)
+      run: cargo fmt --all -- --check
+
+    - name: Run Miri (Memory Safety Checker)
+      run: cargo miri run --all-targets
+
+    - name: Run Security Audits
+      run: cargo audit
+
+    - name: Install AddressSanitizer
+      run: rustup component add sanitizer
+
+    - name: Run AddressSanitizer
+      run: cargo build --release --features=asan
+
